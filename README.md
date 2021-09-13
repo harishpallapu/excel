@@ -1,3 +1,3 @@
-shell script to push to github with single command
+#shell script to push to github with single command with below
 
-sh 
+sh singlepush.sh
