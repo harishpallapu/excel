@@ -1,0 +1,119 @@
+pipeline {
+    agent any
+
+    tools {
+        // Install the Maven version configured as "M3" and add it to the path.
+        maven "M2_HOME"
+    }
+
+    stages {
+        stage('SAST') {
+            steps {
+                script {
+                    try {
+                // Get some code from a GitHub repository
+                checkout([$class: 'GitSCM', branches: [[name: '*/master']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/harishpallapu/SourceCode_SAST.git']]])
+                bat "git clone https://github.com/harishpallapu/sonarqube_scannar_windows.git"
+                bat "./sonarqube_scannar_windows/sonar-scanner-4.6.2.2472-windows/bin/sonar-scanner.bat"
+                    } catch (err) {
+							echo err.getMessage()
+							unstable(message: "${STAGE_NAME} is unstable")
+							echo "Error detected, ${env.STAGE_NAME} failed...............!"
+						}                
+                // Run Maven on a Unix agent.
+                //sh "mvn -Dmaven.test.failure.ignore=true clean package"
+            }
+        } 
+        }
+        stage('Build') {
+            steps {
+                // To run Maven on a Windows agent, use
+                 bat "mvn clean package"
+            }
+            }
+        stage("Tomcat") {
+           steps {
+            deploy adapters: [tomcat8(credentialsId: 'f9e5d28d-6a35-4704-a1bd-6676011dd79a', path: '', url: 'http://localhost:8084')], contextPath: null, onFailure: false, war: '**/*.war'
+        }
+        }
+        stage('web') {
+            steps {
+                script {
+                    try {
+	    			bat '''git clone https://github.com/harishpallapu/webtest.git
+					cd webtest
+					mvn test'''
+ 		   } catch (err) {
+							echo err.getMessage()
+							unstable(message: "${STAGE_NAME} is unstable")
+							echo "Error detected, ${env.STAGE_NAME} failed..................!"
+						}					
+ 		   }   
+            }
+        }        
+        stage('mob') {
+            steps {
+                script {
+                    try {
+	    			bat ''' git clone https://github.com/harishpallapu/mobiletest.git
+					cd mobiletest
+					mvn test'''
+                    } catch (err) {
+							echo err.getMessage()
+							unstable(message: "${STAGE_NAME} is unstable")
+							echo "Error detected, ${env.STAGE_NAME} failed..................!"
+						}					
+            }               
+                
+            }
+        }
+        stage('DAST') {
+            steps {
+                script {
+                    try {
+                       arachniScanner checks: '*', format: 'html', url: 'http://localhost:8084/SpringMVCAnnotationShoppingCart/'
+                    } catch (err) {
+							echo err.getMessage()
+							unstable(message: "${STAGE_NAME} is unstable")
+							echo "Error detected, ${env.STAGE_NAME} failed..................!"                       
+                    }
+                }
+            }
+        }
+        stage('Performance') {
+            			steps {
+		   			script {
+						try {
+							bat '''dir
+                            git clone https://github.com/harishpallapu/folder.git
+                            cd folder
+                            C:/Windows/System32/config/systemprofile/AppData/Local/Jenkins/.jenkins/workspace/sample_job2/folder/apache-jmeter-5.4.1/apache-jmeter-5.4.1/bin/jmeter.bat -n -t C:/Windows/system32/config/systemprofile/AppData/Local/Jenkins/.jenkins/workspace/folder/OnlineShop_1.jmx -l C:/Windows/system32/config/systemprofile/AppData/Local/Jenkins/.jenkins/workspace/folder/OnlineShop_result.jtl -e -o C:/Windows/system32/config/systemprofile/AppData/Local/Jenkins/.jenkins/workspace/folder/
+            					 '''
+            					} catch (err) {
+							echo err.getMessage()
+							unstable(message: "${STAGE_NAME} is unstable")
+							echo "Error detected, ${env.STAGE_NAME} failed..................!"
+							}
+					}
+			}
+		}        
+        stage('Nexus') {
+            steps {
+               bat 'tar -a -c -f web-test-report${BUILD_NUMBER}.zip webtest/target/surefire-reports/*'
+               bat '''mkdir test-reports
+               cd test-reports
+               curl -T "C:/Windows/System32/config/systemprofile/AppData/Local/Jenkins/.jenkins/workspace/sample_job2/Shoppingcart/.scannerwork/report-task.txt" -u admin:admin123 -v http://localhost:8081/repository/maven-central-repo/sast-reports/
+               curl -T "C:/Windows/System32/config/systemprofile/AppData/Local/Jenkins/.jenkins/workspace/sample_job2/web-test-report${BUILD_NUMBER}.zip" -u admin:admin123 -v http://localhost:8081/repository/maven-central-repo/web-test-report/
+               '''
+                           }
+        }         
+    }
+ 	post {
+        // Clean after build
+        always {
+		mail to: 'nihas0505@gmail.com',
+        subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+        body: "${env.BUILD_URL} has result ${currentBuild.result}"
+        }
+    }     
+}
